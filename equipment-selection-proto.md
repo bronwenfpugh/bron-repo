@@ -3,8 +3,8 @@
 Create a webapp for residential HVAC contractors that matches users' ServiceTitan pricebook equipment to the home's Manual J load using equipment nominal output (in tons for ACs and heat pumps, and in BTUs for furnaces and boilers). Users can further filter their pricebook equipment by brand, equipment type (furnace, AC, heat pump, boiler, or furnace+AC), staging (single, two, variable), system type (heating, cooling, heating & cooling), distribution type (ducted, ductless, hydronic, mixed), AFUE for furnaces if available, and cabinet size if available.
 
 ## User Stories
-- As a user, I want to filter the equipment in my ServiceTitan pricebook so that I see only my equipment that matches the job's Manual J load.
-- As a user, I want simple guidance about how to adjust output sizes for my climate.
+- As a user, I want to filter the equipment in my ServiceTitan pricebook so that I see only my equipment that matches the job's Manual J load and my custom criteria.
+- As a user, I want simple, customized guidance about how to size and select equipment.
 
 ## Implementation Phases 
 ### Phase 1: Filter on Nominal tonnage
@@ -32,8 +32,8 @@ Create a webapp for residential HVAC contractors that matches users' ServiceTita
 - If system type = cooling and SHR > 0.95, give this instruction: "Dry climates affect system capacity. Verify capacity for your area using performance data."
 - If outdoor winter db > 30F and system type = heating and equipment type = HP, give this instruction: "Heat pumps lose capacity as outdoor temps drop. Use a cold climate heat pump and make sure that the system will meet the heating load at your outdoor winter design temp. (We recommend using a balance point chart.)"
 ## Design System
-Color Palette
-Primary Colors:
+### Color Palette
+- Primary Colors:
 
 Carbon: #101010 (primary text, high contrast elements)
 Slate 1: #606060 (secondary text)
@@ -43,18 +43,18 @@ Dust 2: #F0F0F0 (subtle backgrounds)
 Dust 3: #F6F6F6 (card backgrounds, input fields)
 White: #FFFFFF (main background, content areas)
 
-Accent Colors:
+- Accent Colors:
 
 Electric Purple: #683F4 (primary brand color, CTAs)
 Radiant Orange: #F7685A (warnings, alerts)
 
-Status Colors:
+- Status Colors:
 
 Warning Orange: #FF8C80 (warning states)
 Success Green: #00CD42 (success states, available reports)
 Error Red: #E84456 (error states, destructive actions)
 
-Story Editor Colors (for data visualization):
+- Story Editor Colors (for data visualization):
 
 Default Purple: #8B69C3 (primary charts/graphs)
 Default Slate: #92AC97 (secondary data)
@@ -63,8 +63,8 @@ Variant Teal: #709C91 (supplementary data)
 Variant Magenta: #D279C0 (accent data)
 Variant Gold: #DFC470 (special indicators)
 
-Typography
-Font Family: Archivo (primary font for all text)
+### Typography
+- Font Family: Archivo (primary font for all text)
 Hierarchy:
 
 Headline 1: SemiBold 32px/35px (main page titles)
@@ -74,7 +74,7 @@ Headline 4: SemiBold 20px/25px (card titles)
 Headline 5: SemiBold 18px/20px (component headers)
 Headline 6: SemiBold 16px/20px (small headers)
 
-Body Text:
+- Body Text:
 
 Button Large: SemiBold 15px/16px (primary CTAs)
 Button Normal: Medium 15px/16px (secondary buttons)
@@ -84,14 +84,14 @@ Description Large: Light 15px/20px (help text, descriptions)
 Description Regular: Regular 13px/15px (body text)
 Description Light: Light 13px/15px (secondary body text)
 
-Micro Text:
+- Micro Text:
 
 Title Small: Regular/Light 13px/15px (labels, captions)
 Title Micro: SemiBold/Regular/Light 10px/12px (tags, status indicators)
 Status: Roboto Mono Medium 11.5px/15px (technical data, BTU values)
 
-Component System
-Button Hierarchy:
+### Component System
+- Button Hierarchy:
 
 Primary: Electric Purple background, white text (main actions like "Filter Equipment", "Calculate Load")
 Primary Outline: Electric Purple border, Electric Purple text (secondary actions)
@@ -99,13 +99,13 @@ Secondary: Carbon background, white text (standard actions)
 Tertiary: Dust background, Carbon text (minimal actions)
 Destructive: Error Red background, white text (delete, clear actions)
 
-Button Sizes:
+- Button Sizes:
 
 Large: Higher padding, 15px SemiBold text (primary page actions)
 Normal: Standard padding, 15px Medium text (common actions)
 Small: Compact padding, 13px Medium text (inline actions, tables)
 
-Input Components:
+- Input Components:
 
 Form fields use Dust 3 backgrounds with Carbon text
 Labels use Description Regular styling
@@ -113,21 +113,21 @@ Error states show Error Red borders and text
 Success states show Success Green borders
 Focus states use Electric Purple borders
 
-Card Components:
+- Card Components:
 
 Background: White with subtle Dust 1 borders
 Headers use Headline 4-6 depending on importance
 Content uses Description Regular for body text
 Actions placed in bottom-right or header-right areas
 
-Navigation Elements:
+- Navigation Elements:
 
 Primary navigation uses Carbon text on White backgrounds
 Active states use Electric Purple accents
 Hover states use Dust 2 backgrounds
 Icons from the provided icon set (construction, HVAC-related symbols)
 
-Spacing System
+- Spacing System
 Base Unit: 4px grid system
 Common Spacing:
 
@@ -138,15 +138,15 @@ Common Spacing:
 32px: XL spacing (major section breaks)
 48px: XXL spacing (page-level separation)
 
-Layout Guidelines
-Grid System:
+### Layout Guidelines
+- Grid System:
 
 12-column grid for main content areas
 16px gutters between columns
 Maximum content width: 1200px
 Responsive breakpoints: Mobile (320px+), Tablet (768px+), Desktop (1024px+)
 
-Content Organization:
+- Content Organization:
 
 Equipment filter controls in left sidebar or top panel
 Main equipment results in center content area
@@ -154,7 +154,7 @@ Load calculation inputs in prominent top section
 Use cards for individual equipment items
 Implement clear visual hierarchy for BTU/tonnage values
 
-Interactive States:
+- Interactive States:
 
 Hover: Dust 2 backgrounds, Electric Purple accents
 Active: Electric Purple backgrounds for selections
@@ -163,8 +163,8 @@ Loading: Use skeleton screens with Dust 3 backgrounds
 
 
 ## Data Model
------
-Equipment Data Structure
+
+### Equipment Data Structure
 Each equipment item in the pricebook should contain the following fields:
 
 Core Equipment Properties:
@@ -197,8 +197,8 @@ AHRI Matching (for combination systems):
 ahriMatched: Boolean indicating if furnace+AC is AHRI certified as a matched system
 matchedIndoorModel: Indoor unit model for matched systems (string)
 matchedOutdoorModel: Outdoor unit model for matched systems (string)
--------
-Manual J Load Inputs
+
+### Manual J Load Inputs
 User-provided load calculation data:
 Load Requirements:
 
@@ -209,13 +209,12 @@ latentCoolingBtu: Calculated latent cooling load (totalCooling - sensibleCooling
 sensibleHeatRatio: Calculated SHR (sensibleCooling / totalCooling)
 
 --------
-User Preferences
-Filtering and sizing preferences:
-Sizing Preferences:
+### User Preferences
 
+- Sizing Preferences:
 heatPumpSizingMode: For heat pumps, size to heating or cooling load (enum: "heating_load", "cooling_load")
 
-Filter Criteria:
+- Filter Criteria:
 
 selectedBrands: Array of selected brand names (string[])
 selectedEquipmentTypes: Array of selected equipment types (string[])
