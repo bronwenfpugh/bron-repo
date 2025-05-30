@@ -1,4 +1,4 @@
-# Equipment Selection PRD (Revised)
+# Equipment Selection PRD
 
 ## Overview 
 Create a webapp for residential HVAC contractors that matches users' ServiceTitan pricebook equipment to the home's Manual J load using equipment nominal output. The app prioritizes speed and simplicity while providing precise, reliable equipment recommendations with clear guidance.
