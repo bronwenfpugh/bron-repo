@@ -1,4 +1,4 @@
-# Equipment Selection PRD - Implementation Ready
+# Equipment Selection PRD
 
 ## Overview 
 Create a webapp for residential HVAC contractors that matches users' ServiceTitan pricebook equipment to the home's Manual J load using equipment nominal output. The app prioritizes speed and simplicity while providing precise, reliable equipment recommendations with clear guidance.
@@ -237,7 +237,6 @@ Include major brands: Carrier, Trane, Lennox, Rheem, Goodman, American Standard
 - **Calculation errors:** Graceful fallbacks with user notification
 
 ### Responsive Design Requirements
-- Mobile-first approach
 - Tablet optimization for field use
 - Desktop support for office environments
 - Touch-friendly controls for mobile devices
