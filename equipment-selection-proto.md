@@ -1,225 +1,411 @@
 # Equipment Selection PRD
 ## Overview 
-Create a webapp for residential HVAC contractors that matches users' ServiceTitan pricebook equipment to the home's Manual J load using equipment nominal output (in tons for ACs and heat pumps, and in BTUs for furnaces and boilers). Users can further filter their pricebook equipment by brand, equipment type (furnace, AC, heat pump, boiler, or furnace+AC), staging (single, two, variable), system type (heating, cooling, heating & cooling), distribution type (ducted, ductless, hydronic, mixed), AFUE for furnaces if available, and cabinet size if available.
+Create a webapp for residential HVAC contractors that matches users' ServiceTitan pricebook equipment to the home's Manual J load using equipment nominal output. Users can further filter pricebook equipment by brand, equipment type, staging, system type, distribution type, AFUE, and cabinet size. The app prioritizes speed and simplicity while providing precise, reliable equipment recommendations with clear guidance.
+
+## Key Success Metrics
+- Equipment selection completed in under 2 minutes
+- Clear guidance provided for all recommendations
+- Handles typical pricebooks of 50-500 equipment items efficiently
 
 ## User Stories
-- As a user, I want to filter the equipment in my ServiceTitan pricebook so that I see only my equipment that matches the job's Manual J load and my custom criteria.
-- As a user, I want simple, customized guidance about how to size and select equipment.
+- As a busy contractor, I want to quickly enter my Maual J loads and see all viable equipment from my ServiceTitan pricebook in under 2 minutes
+- As a contractor with basic HVAC knowledge, I want clear, customized guidance about how to size and select equipment
+- As a contractor, I want to see all viable options (not just "best" picks) so I can make the final decision based on price, availability, and customer preferences
 
 ## Implementation Phases 
-### Phase 1: Filter on Nominal tonnage
-- Users can enter the home's Manual J inputs: Total heating BTU, Total cooling BTU, Sensible cooling BTU. The app should use those inputs to infer latent cooling BTU and sensible heat ratio. User can also enter design conditions: Outdoor winter design temperature in degrees F (_at_outdoor_winter_99_pct_db), outdoor summer design temperature in degrees F (_at_outdoor_summer_1_pct_db), indoor summer design temperature in degrees F (_indoor_design_cooling_db), indoor winter design temperature in degrees F (_indoor_design_heating_db), relative humidity (percentage), and elevation in feet (_elevation). Finally, they can indicate whether the system is zoned.
-- The app shows all the users' pricebook equipment that meets the load
-- Furnaces: List furnaces with 'actual output capacity' within 100-140% of heating load. Also show furnaces with 'actual output capacity' within 140-200% of heating load, but with a disclaimer: "This furnace is x% oversized. Use only if the AC system requires more blower power to accommodate the cooling load." Calculate 'actual output capacity' as 'heatingCapacityBtu' * 'afue'
-- ACs: Use same rules as heat pump sized to cooling (below) - except remove the "backup heat needed" instruction
-- Heat pumps: If the heating load is greater than the cooling load, and the load sensible heat ratio < 0.95, and the user selects "size to cooling load," list single_stage, two_stage, or variable_speed equipment sized to the cooling load. If the users selects single_stage equipment, if the total cooling load ≤ 24,000 BTU, list single_stage equipment within 90-120% of (total cool load/12,000); and if the total cooling load >24,000, list single_stage equipment within 90-115% of (total cool load/12,000). If the user selects two_stage equipment, list two_stage equipment within 90-125% of (total cool load/12,000). If the user selects variable_speed equipment, list variable_speed equipment within 90-130% of (total cool load/12,000). Also add this instruction: "Be sure to add backup heat. x kw of backup heat are required." (Calculate backup heat requirement in kilowatts as (totalheatingbtu-heatingcapacitybtu)/3412)). Also add this instruction: "Use OEM data to verify the system has x 'latentcoolingbtu' BTU min latent capacity."
-- Heat pumps: If the heating load is greater than the cooling load, and the load sensible heat ratio < 0.95, and the user selects "size to heating load": List heat pump equipment within 100-150% of (heating load/12,000). Also add this instruction: "A system sized for heating will be oversized for cooling and struggle to remove moisture. Add a standalone dehumidifier and use OEM data to verify that the system turns down to <80% of total cooling load." If the system is zoned, 
-- Heat pumps: If the heating load is greater than the cooling load, and the load sensible heat ratio is > 0.95, List heat pump equipment within 100-150% of (heating load/12,000). Also add this instruction: "Sizing the system to heating will oversize it for cooling. For optimal comfort and to avoid wear & tear on the system, use performance data to verify that it turns down to <80% of total cooling load."
-- Heat pumps: If the heating load is less than the cooling load: Use same rules as heat pump sized to cooling (above) - except remove the "backup heat needed" instruction
 
+### Phase 1: Core Equipment Matching (MVP)
+**Goal: Get contractors from load input to equipment list in 60 seconds**
 
+**Features:**
+- Simple load input form (Total heating BTU, Total cooling BTU, Sensible cooling BTU)
+- Basic equipment filtering by nominal capacity
+- Clear equipment recommendations with sizing guidance
+- ServiceTitan pricebook API integration (mock data for development)
 
+- **Equipment Types Supported:**
+- Furnaces (heating only)
+- Air conditioners (cooling only) 
+- Heat pumps (heating & cooling)
 
-### Phase 2: Additional User Filters
-- Users can select additional filter criteria: Brand, equipment type (furnace, AC, heat pump, boiler, or AHRI-matched furnace + AC), staging (single, two, variable), equipment type (heating, cooling, heating & cooling), distribution type (ducted, ductless, hydronic, mixed), AFUE for furnaces if available, and cabinet size if available. For heat pumps, users can toggle select whether to size the equipment to the heating load or to the cooling load.
-- Users can then view the filtered pricebook equipment
-- If equipment type = "furnace" or "furnace + AC," distribution type will be automatically set to "ducted." If equipment type = "boiler," distribution type will automatically be set to "hydronic." If equipment type = "AC" or "heat pump," prompt user to select distribution type (ducted, ductless, hydronic). 
-- If distribution type = ducted, include this instruction: "Remember to check whether the fan is powerful enough (static pressure) to move the air through the duct system. If not, consider modifying ductwork, increasing return size, adjusting airflow, or selecting a smaller system size."
-- If "equipment type" = "furnace" or "boiler," then "system type" will be automatically set to "heating." If "equipment type" = "furnace + AC," "system type" will be automatically set to "heating & cooing"). If "euqipment type" = "AC" then "system type" will be automatically set to "cooling." IF "equipment type" = "heat pump" then "system type" will be automatically set to "heating & cooling."
-- If system type = "cooling" and distribution = ducted, show this instruction: "verify that the exsting duct system is capable of handling at least x CFM." Calculate recommended CFM as (the closest standard tonnage that is > (total cool load/12,000)) * recommended CFM/ton. Standard tonnages are 1.5 ton, 2 ton, 2.5 ton, 3 ton, 4 ton and 5 ton. If the load SHR < 0.85, recommended CFM/ton = 350. If the load SHR is between 0.85 and 0.95, recommended CFM/ton = 400. If the load SHR > 0.95, recommended CFM/ton = 450.
-- If "elevation" > 1,000 feet and "equipment type" = "furnace," give this instruction: "Cooling and fossil fuel heating capacity will  decrease (about 2–4% reduction in capacity per 1,000 feet above sea level)."
-- If system type = cooling and outdoor summer design temp >95F, give this instruction: "High outdoor temperatures affect system capacity. Verify capacity for your area using performance data."
-- If system type = cooling and SHR > 0.95, give this instruction: "Dry climates affect system capacity. Verify capacity for your area using performance data."
-- If outdoor winter db > 30F and system type = heating and equipment type = HP, give this instruction: "Heat pumps lose capacity as outdoor temps drop. Use a cold climate heat pump and make sure that the system will meet the heating load at your outdoor winter design temp. (We recommend using a balance point chart.)"
-## Design System
-### Color Palette
-- Primary Colors:
+### Phase 2: Advanced Filtering & Guidance
+**Goal: Add precision filters and comprehensive guidance**
 
-Carbon: #101010 (primary text, high contrast elements)
-Slate 1: #606060 (secondary text)
-Slate 2: #757575 (tertiary text)
-Dust 1: #EAEAEA (light backgrounds, dividers)
-Dust 2: #F0F0F0 (subtle backgrounds)
-Dust 3: #F6F6F6 (card backgrounds, input fields)
-White: #FFFFFF (main background, content areas)
+**Features:**
+- Additional load inputs (design temperatures, elevation, humidity)
+- Equipment filters (brand, staging, distribution type, AFUE)
+- Advanced sizing guidance and warnings
+- Support for boilers and combination systems
 
-- Accent Colors:
+### Phase 3: Enhanced User Experience
+**Goal: Polish and optimize for daily use**
 
-Electric Purple: #683F4 (primary brand color, CTAs)
-Radiant Orange: #F7685A (warnings, alerts)
+**Features:**
+- Improved UI/UX based on user feedback
+- Performance optimizations for large pricebooks
+- Advanced guidance for complex scenarios
+- Export/sharing capabilities
 
-- Status Colors:
-
-Warning Orange: #FF8C80 (warning states)
-Success Green: #00CD42 (success states, available reports)
-Error Red: #E84456 (error states, destructive actions)
-
-- Story Editor Colors (for data visualization):
-
-Default Purple: #8B69C3 (primary charts/graphs)
-Default Slate: #92AC97 (secondary data)
-Variant Coral: #F18777 (highlighting, important data points)
-Variant Teal: #709C91 (supplementary data)
-Variant Magenta: #D279C0 (accent data)
-Variant Gold: #DFC470 (special indicators)
-
-### Typography
-- Font Family: Archivo (primary font for all text)
-Hierarchy:
-
-Headline 1: SemiBold 32px/35px (main page titles)
-Headline 2: SemiBold 24px/28px (section headers)
-Headline 3: SemiBold 22px/25px (subsection headers)
-Headline 4: SemiBold 20px/25px (card titles)
-Headline 5: SemiBold 18px/20px (component headers)
-Headline 6: SemiBold 16px/20px (small headers)
-
-- Body Text:
-
-Button Large: SemiBold 15px/16px (primary CTAs)
-Button Normal: Medium 15px/16px (secondary buttons)
-Button Small: Medium 13px/15px (tertiary buttons)
-Form Entry: Regular 15px/20px (input fields, form labels)
-Description Large: Light 15px/20px (help text, descriptions)
-Description Regular: Regular 13px/15px (body text)
-Description Light: Light 13px/15px (secondary body text)
-
-- Micro Text:
-
-Title Small: Regular/Light 13px/15px (labels, captions)
-Title Micro: SemiBold/Regular/Light 10px/12px (tags, status indicators)
-Status: Roboto Mono Medium 11.5px/15px (technical data, BTU values)
-
-### Component System
-- Button Hierarchy:
-
-Primary: Electric Purple background, white text (main actions like "Filter Equipment", "Calculate Load")
-Primary Outline: Electric Purple border, Electric Purple text (secondary actions)
-Secondary: Carbon background, white text (standard actions)
-Tertiary: Dust background, Carbon text (minimal actions)
-Destructive: Error Red background, white text (delete, clear actions)
-
-- Button Sizes:
-
-Large: Higher padding, 15px SemiBold text (primary page actions)
-Normal: Standard padding, 15px Medium text (common actions)
-Small: Compact padding, 13px Medium text (inline actions, tables)
-
-- Input Components:
-
-Form fields use Dust 3 backgrounds with Carbon text
-Labels use Description Regular styling
-Error states show Error Red borders and text
-Success states show Success Green borders
-Focus states use Electric Purple borders
-
-- Card Components:
-
-Background: White with subtle Dust 1 borders
-Headers use Headline 4-6 depending on importance
-Content uses Description Regular for body text
-Actions placed in bottom-right or header-right areas
-
-- Navigation Elements:
-
-Primary navigation uses Carbon text on White backgrounds
-Active states use Electric Purple accents
-Hover states use Dust 2 backgrounds
-Icons from the provided icon set (construction, HVAC-related symbols)
-
-- Spacing System
-Base Unit: 4px grid system
-Common Spacing:
-
-4px: Micro spacing (icon padding, tight elements)
-8px: Small spacing (button padding, input padding)
-16px: Medium spacing (card padding, section gaps)
-24px: Large spacing (component separation)
-32px: XL spacing (major section breaks)
-48px: XXL spacing (page-level separation)
-
-### Layout Guidelines
-- Grid System:
-
-12-column grid for main content areas
-16px gutters between columns
-Maximum content width: 1200px
-Responsive breakpoints: Mobile (320px+), Tablet (768px+), Desktop (1024px+)
-
-- Content Organization:
-
-Equipment filter controls in left sidebar or top panel
-Main equipment results in center content area
-Load calculation inputs in prominent top section
-Use cards for individual equipment items
-Implement clear visual hierarchy for BTU/tonnage values
-
-- Interactive States:
-
-Hover: Dust 2 backgrounds, Electric Purple accents
-Active: Electric Purple backgrounds for selections
-Disabled: Dust colors with reduced opacity
-Loading: Use skeleton screens with Dust 3 backgrounds
-
+---
 
 ## Data Model
 
-### Equipment Data Structure
-Each equipment item in the pricebook should contain the following fields:
+### Core Equipment Schema
+The equipment data structure should be optimized for fast filtering and clear display:
 
-Core Equipment Properties:
+```typescript
+interface Equipment {
+  // Primary Identifiers
+  id: string;                    // Unique ServiceTitan equipment ID
+  name: string;                  // Display name (e.g., "Carrier 58CVA090")
+  brand: string;                 // Manufacturer name
+  model: string;                 // Model number/series
+  price: number;                 // Cost in dollars
+  
+  // Equipment Classification
+  equipmentType: EquipmentType;  // Primary equipment category
+  systemType: SystemType;        // What loads it handles
+  distributionType: DistributionType; // How it distributes conditioned air/water
+  
+  // Capacity Data (for sizing calculations)
+  capacities: {
+    heating?: HeatingCapacity;   // Only present if equipment provides heating
+    cooling?: CoolingCapacity;   // Only present if equipment provides cooling
+  };
+  
+  // Technical Specifications
+  specifications: {
+    staging: StagingType;        // Single, two-stage, or variable
+    afue?: number;              // For furnaces/boilers (0-100 percentage)
+    seer?: number;              // For cooling equipment
+    hspf?: number;              // For heat pumps
+    refrigerant?: string;       // R-410A, R-32, etc.
+  };
+  
+  // Physical Properties
+  physical?: {
+    cabinetSize?: {
+      width: number;            // Inches
+      height: number;           // Inches  
+      depth: number;            // Inches
+    };
+    weight?: number;            // Pounds
+  };
+  
+  // Matching Information (for combo systems)
+  matching?: {
+    isAhriMatched: boolean;
+    indoorModel?: string;
+    outdoorModel?: string;
+    matchingSetId?: string;     // Groups matched equipment together
+  };
+}
 
-id: Unique identifier (string)
-name: Equipment model name/number (string)
-brand: Manufacturer brand (string)
-equipmentType: Equipment category (enum: "furnace", "ac", "heat_pump", "boiler", "furnace_ac_combo")
-price: Equipment cost (number)
+// Enums for type safety and filtering
+enum EquipmentType {
+  FURNACE = 'furnace',
+  AC = 'ac', 
+  HEAT_PUMP = 'heat_pump',
+  BOILER = 'boiler',
+  FURNACE_AC_COMBO = 'furnace_ac_combo'
+}
 
-Capacity Properties:
+enum SystemType {
+  HEATING = 'heating',
+  COOLING = 'cooling', 
+  HEATING_AND_COOLING = 'heating_and_cooling'
+}
 
-heatingCapacityBtu: Heating output in BTUs (number, required for furnaces, heat pumps, boilers)
-CapacityTons: Cooling output in tons (number, required for ACs, heat pumps)
-coolingCapacityBtu: Total cooling output in BTUs (number, calculated from tons)
+enum DistributionType {
+  DUCTED = 'ducted',
+  DUCTLESS = 'ductless',
+  HYDRONIC = 'hydronic',
+  MIXED = 'mixed'
+}
 
-Technical Specifications:
+enum StagingType {
+  SINGLE_STAGE = 'single_stage',
+  TWO_STAGE = 'two_stage',
+  VARIABLE_SPEED = 'variable_speed'
+}
 
-staging: Equipment staging type (enum: "single_stage", "two_stage", "variable_speed")
-distributionType: Compatible distribution system (enum: "ducted", "ductless", "mixed," "hydronic")
-afue: Annual Fuel Utilization Efficiency percentage (number, applicable to furnaces/boilers)
-cabinetSize: Physical cabinet dimensions (object, optional)
-  length: Cabinet length in inches (number)
-  width: Cabinet width in inches (number)
-  height: Cabinet height in inches (number, optional)
-refrigerant: Refrigerant type (string, optional)
+// Capacity interfaces for clear data handling
+interface HeatingCapacity {
+  inputBtu: number;             // Rated input capacity
+  outputBtu: number;            // Actual heating output (input * efficiency)
+  nominalTons?: number;         // For heat pumps (outputBtu / 12000)
+}
 
-AHRI Matching (for combination systems):
+interface CoolingCapacity {
+  totalBtu: number;             // Total cooling capacity
+  sensibleBtu: number;          // Sensible cooling capacity
+  latentBtu: number;            // Latent cooling capacity (calculated)
+  nominalTons: number;          // totalBtu / 12000
+}
+```
 
-ahriMatched: Boolean indicating if furnace+AC is AHRI certified as a matched system
-matchedIndoorModel: Indoor unit model for matched systems (string)
-matchedOutdoorModel: Outdoor unit model for matched systems (string)
+### Manual J Load Input Schema
+Simplified for Phase 1, expandable for Phase 2:
 
-### Manual J Load Inputs
-User-provided load calculation data:
-Load Requirements:
+```typescript
+interface ManualJLoad {
+  // Core Load Data (Phase 1)
+  totalHeatingBtu: number;      // Required
+  totalCoolingBtu: number;      // Required  
+  sensibleCoolingBtu: number;   // Required
+  
+  // Calculated Values (auto-computed)
+  latentCoolingBtu: number;     // totalCooling - sensibleCooling
+  sensibleHeatRatio: number;    // sensibleCooling / totalCooling
+  
+  // Design Conditions (Phase 2)
+  designConditions?: {
+    outdoorWinterDb: number;    // °F
+    outdoorSummerDb: number;    // °F  
+    indoorWinterDb: number;     // °F (default 70)
+    outdoorSummerDb: number;    // °F (default 75)
+    relativeHumidity: number;   // % (default 50)
+    elevation: number;          // feet above sea level
+  };
+  
+  // System Characteristics (Phase 2)
+  systemInfo?: {
+    isZoned: boolean;           // Multiple zones/thermostats
+    hasExistingDuctwork: boolean;
+    ductworkCondition?: 'poor' | 'fair' | 'good' | 'excellent';
+  };
+}
+```
 
-totalHeatingBtu: Total heating load in BTUs (number, required)
-totalCoolingBtu: Total cooling load in BTUs (number, required)
-sensibleCoolingBtu: Sensible cooling load in BTUs (number, required)
-latentCoolingBtu: Calculated latent cooling load (totalCooling - sensibleCooling)
-sensibleHeatRatio: Calculated SHR (sensibleCooling / totalCooling)
+### Equipment Sizing Logic Schema
+Encapsulate sizing rules for maintainability:
 
---------
-### User Preferences
+```typescript
+interface SizingRule {
+  equipmentType: EquipmentType;
+  loadType: 'heating' | 'cooling';
+  conditions: SizingCondition[];
+  sizeRange: {
+    minPercent: number;         // Minimum % of load (e.g., 90)
+    maxPercent: number;         // Maximum % of load (e.g., 140)
+  };
+  guidance: string[];           // Array of guidance messages
+  warnings?: string[];          // Array of warning messages
+}
 
-- Sizing Preferences:
-heatPumpSizingMode: For heat pumps, size to heating or cooling load (enum: "heating_load", "cooling_load")
+interface SizingCondition {
+  field: string;                // Field to check (e.g., 'sensibleHeatRatio')
+  operator: 'lt' | 'lte' | 'gt' | 'gte' | 'eq' | 'between';
+  value: number | [number, number];
+}
 
-- Filter Criteria:
+// Example sizing rules data
+const SIZING_RULES: SizingRule[] = [
+  {
+    equipmentType: EquipmentType.FURNACE,
+    loadType: 'heating',
+    conditions: [],
+    sizeRange: { minPercent: 100, maxPercent: 140 },
+    guidance: [
+      "Furnace sized appropriately for heating load",
+      "Verify blower capacity if pairing with AC"
+    ]
+  },
+  {
+    equipmentType: EquipmentType.HEAT_PUMP,
+    loadType: 'cooling',
+    conditions: [
+      { field: 'sensibleHeatRatio', operator: 'lt', value: 0.95 },
+      { field: 'heatingLoadRatio', operator: 'gt', value: 1.0 }
+    ],
+    sizeRange: { minPercent: 90, maxPercent: 120 },
+    guidance: [
+      "Heat pump sized for cooling load",
+      "Backup heat required for heating load"
+    ],
+    warnings: [
+      "Verify latent cooling capacity with OEM data"
+    ]
+  }
+];
+```
 
-selectedBrands: Array of selected brand names (string[])
-selectedEquipmentTypes: Array of selected equipment types (string[])
-selectedStaging: Array of selected staging options (string[])
-selectedDistributionTypes: Array of selected distribution types (string[])
-selectedCabinetSizes: Array of selected cabinet sizes (string[])
+### Filter State Schema
+Track user selections for equipment filtering:
 
+```typescript
+interface FilterState {
+  // Load-based filters (always applied)
+  loadRequirements: ManualJLoad;
+  
+  // User-selected filters (Phase 2)
+  selectedBrands: string[];
+  selectedEquipmentTypes: EquipmentType[];
+  selectedStaging: StagingType[];
+  selectedDistributionTypes: DistributionType[];
+  
+  // Heat pump specific (Phase 2)
+  heatPumpSizingMode?: 'heating_load' | 'cooling_load';
+  
+  // Capacity filters (Phase 2)
+  minAfue?: number;
+  maxAfue?: number;
+  minSeer?: number;
+  maxSeer?: number;
+}
+```
 
+### Equipment Recommendation Schema
+Structure for displaying results to users:
+
+```typescript
+interface EquipmentRecommendation {
+  equipment: Equipment;
+  sizing: {
+    matchType: 'excellent' | 'good' | 'acceptable' | 'oversized';
+    loadCoverage: {
+      heating?: {
+        percentage: number;     // % of heating load covered
+        adequacy: 'under' | 'adequate' | 'over';
+      };
+      cooling?: {
+        percentage: number;     // % of cooling load covered  
+        adequacy: 'under' | 'adequate' | 'over';
+      };
+    };
+  };
+  guidance: string[];           // Specific guidance for this equipment
+  warnings: string[];           // Warnings or considerations
+  priority: number;             // For sorting (lower = higher priority)
+}
+```
+
+---
+
+## ServiceTitan API Integration
+
+### Mock Data Structure for Development
+```typescript
+// Mock pricebook data for development/testing
+interface MockPricebook {
+  contractorId: string;
+  lastUpdated: string;
+  equipment: Equipment[];
+}
+
+// API response structure
+interface ServiceTitanResponse {
+  success: boolean;
+  data: Equipment[];
+  pagination?: {
+    page: number;
+    total: number;
+    hasMore: boolean;
+  };
+  error?: string;
+}
+```
+
+### API Endpoints Expected
+```typescript
+// GET /api/equipment?contractorId={id}
+// Returns: ServiceTitanResponse with equipment array
+
+// POST /api/equipment/filter
+// Body: FilterState
+// Returns: ServiceTitanResponse with filtered equipment
+```
+
+---
+
+## Technical Requirements
+
+### Performance Requirements
+- Initial load: < 2 seconds
+- Equipment filtering: < 500ms for up to 1000 items
+- Responsive design (mobile-first)
+- Offline capability for core calculations (Phase 3)
+
+### Data Validation
+```typescript
+// Input validation schemas
+const LOAD_VALIDATION = {
+  totalHeatingBtu: { min: 1000, max: 500000, required: true },
+  totalCoolingBtu: { min: 1000, max: 500000, required: true },
+  sensibleCoolingBtu: { min: 1000, max: 500000, required: true }
+};
+
+const DESIGN_TEMP_VALIDATION = {
+  outdoorWinterDb: { min: -30, max: 70 },
+  outdoorSummerDb: { min: 70, max: 130 },
+  indoorTemps: { min: 65, max: 80 }
+};
+```
+
+### Error Handling
+- Graceful API failure handling
+- Clear validation error messages
+- Fallback calculations when data is missing
+- User-friendly error states
+
+---
+
+## Design System
+
+### Color Palette
+**Primary Colors:**
+- Carbon: #101010 (primary text, high contrast elements)
+- Slate 1: #606060 (secondary text)
+- Slate 2: #757575 (tertiary text)
+- Dust 1: #EAEAEA (light backgrounds, dividers)
+- Dust 2: #F0F0F0 (subtle backgrounds)
+- Dust 3: #F6F6F6 (card backgrounds, input fields)
+- White: #FFFFFF (main background, content areas)
+
+**Accent Colors:**
+- Electric Purple: #6834F4 (primary brand color, CTAs)
+- Radiant Orange: #F7685A (warnings, alerts)
+
+**Status Colors:**
+- Success Green: #00CD42 (success states)
+- Warning Orange: #FF8C80 (warning states)
+- Error Red: #E84456 (error states)
+
+### Typography
+**Font Family:** Archivo
+
+**Hierarchy:**
+- Headline 1: SemiBold 32px/35px (main page titles)
+- Headline 2: SemiBold 24px/28px (section headers)
+- Headline 3: SemiBold 22px/25px (subsection headers)
+- Body Regular: Regular 15px/20px (primary body text)
+- Body Small: Regular 13px/15px (secondary text)
+- Technical: Roboto Mono Medium 11.5px/15px (BTU values, model numbers)
+
+### Component Guidelines
+- **Cards:** White background, subtle Dust 1 borders
+- **Buttons:** Electric Purple primary, standard secondary
+- **Forms:** Dust 3 backgrounds, clear validation states
+- **Equipment Lists:** Scannable cards with clear capacity display
+- **Load Inputs:** Prominent, grouped logically
+- **Guidance:** Distinct styling for tips vs. warnings
+
+---
+
+## Success Criteria
+
+### Phase 1 Success Metrics
+- Load input to equipment results in < 60 seconds
+- Clear equipment recommendations with basic guidance
+- Handles 100+ equipment items smoothly
+- Mobile-responsive interface
+
+### Phase 2 Success Metrics  
+- Advanced filtering reduces results by 70%+ when applied
+- Comprehensive guidance covers 90% of common scenarios
+- Supports all major equipment types
+
+### Phase 3 Success Metrics
+- User satisfaction > 8/10 in usability testing
+- 50%+ reduction in equipment selection time vs. current methods
+- Reliable performance with 500+ equipment pricebooks
