@@ -1,15 +1,54 @@
 # Equipment Selection PRD
 ## Overview 
-Create a webapp for residential HVAC contractors that matches users' ServiceTitan pricebook equipment to the home's Manual J load using equipment nominal output (in tons for ACs and heat pumps, and in BTUs for furnaces and boilers). Users can further filter their pricebook equipment by brand, equipment type (furnace, AC, heat pump, boiler, or furnace+AC), staging (single, two, variable), system type (heating, cooling, heating & cooling), distribution type (ducted, ductless, hydronic, mixed), AFUE for furnaces if available, and cabinet size if available.
+Create a webapp for residential HVAC contractors that matches users' ServiceTitan pricebook equipment to the home's Manual J load using equipment nominal output. The app prioritizes speed and simplicity while providing precise, reliable equipment recommendations with clear guidance.
+
+**Key Success Metrics:**
+- Equipment selection completed in under 2 minutes
+- Clear guidance provided for all recommendations
+- Handles typical pricebooks of 50-500 equipment items efficiently
 
 ## User Stories
-- As a user, I want to filter the equipment in my ServiceTitan pricebook so that I see only my equipment that matches the job's Manual J load and my custom criteria.
-- As a user, I want simple, customized guidance about how to size and select equipment.
+- As a busy contractor, I want to quickly enter my Manual J loads and see all viable equipment from my ServiceTitan pricebook in under 2 minutes
+- As a contractor with basic HVAC knowledge, I want clear guidance on why each piece of equipment is recommended and any special considerations
+- As a contractor, I want to see all viable options (not just "best" picks) so I can make the final decision based on price, availability, and customer preferences
+
 
 ## Implementation Phases 
-### Phase 1: Filter on Nominal tonnage
-- Users can enter the home's Manual J inputs: Total heating BTU, Total cooling BTU, Sensible cooling BTU. The app should use those inputs to infer latent cooling BTU and sensible heat ratio. User can also enter design conditions: Outdoor winter design temperature in degrees F (_at_outdoor_winter_99_pct_db), outdoor summer design temperature in degrees F (_at_outdoor_summer_1_pct_db), indoor summer design temperature in degrees F (_indoor_design_cooling_db), indoor winter design temperature in degrees F (_indoor_design_heating_db), relative humidity (percentage), and elevation in feet (_elevation). Finally, they can indicate whether the system is zoned.
-- The app shows all the users' pricebook equipment that meets the load
+
+### Phase 1: Core Equipment Matching (MVP)
+**Goal: Get contractors from load input to equipment list in 60 seconds**
+
+**Features:**
+- Simple load input form (Total heating BTU, Total cooling BTU, Sensible cooling BTU; app infers latent cooling BTU and sensible heat ratio.)
+- Basic equipment filtering by nominal capacity
+- Clear equipment recommendations with sizing guidance
+- ServiceTitan pricebook API integration (mock data for development)
+
+**Equipment Types Supported:**
+- Furnaces (heating only)
+- Air conditioners (cooling only) 
+- Heat pumps (heating & cooling)
+
+### Phase 2: Advanced Filtering & Guidance
+**Goal: Add precision filters and comprehensive guidance**
+
+**Features:**
+- Additional load inputs (design temperatures, elevation, humidity)
+- Equipment filters (brand, staging, distribution type, AFUE, cabinet size, option to size to heating or cooling load)
+- Advanced sizing guidance and warnings
+- Support for boilers and combination systems
+
+### Phase 3: Enhanced User Experience
+**Goal: Polish and optimize for daily use**
+
+**Features:**
+- Improved UI/UX based on user feedback
+- Performance optimizations for large pricebooks
+- Advanced guidance for complex scenarios
+- Export/sharing capabilities
+- 
+### Phase 1 sizing logic:
+
 - Furnaces: List furnaces with 'actual output capacity' within 100-140% of heating load. Also show furnaces with 'actual output capacity' within 140-200% of heating load, but with a disclaimer: "This furnace is x% oversized. Use only if the AC system requires more blower power to accommodate the cooling load." Calculate 'actual output capacity' as 'heatingCapacityBtu' * 'afue'
 - ACs: Use same rules as heat pump sized to cooling (below) - except remove the "backup heat needed" instruction
 - Heat pumps: If the heating load is greater than the cooling load, and the load sensible heat ratio < 0.95, and the user selects "size to cooling load," list single_stage, two_stage, or variable_speed equipment sized to the cooling load. If the users selects single_stage equipment, if the total cooling load ≤ 24,000 BTU, list single_stage equipment within 90-120% of (total cool load/12,000); and if the total cooling load >24,000, list single_stage equipment within 90-115% of (total cool load/12,000). If the user selects two_stage equipment, list two_stage equipment within 90-125% of (total cool load/12,000). If the user selects variable_speed equipment, list variable_speed equipment within 90-130% of (total cool load/12,000). Also add this instruction: "Be sure to add backup heat. x kw of backup heat are required." (Calculate backup heat requirement in kilowatts as (totalheatingbtu-heatingcapacitybtu)/3412)). Also add this instruction: "Use OEM data to verify the system has x 'latentcoolingbtu' BTU min latent capacity."
@@ -18,11 +57,8 @@ Create a webapp for residential HVAC contractors that matches users' ServiceTita
 - Heat pumps: If the heating load is less than the cooling load: Use same rules as heat pump sized to cooling (above) - except remove the "backup heat needed" instruction
 
 
+### Phase 2 logic:
 
-
-### Phase 2: Additional User Filters
-- Users can select additional filter criteria: Brand, equipment type (furnace, AC, heat pump, boiler, or AHRI-matched furnace + AC), staging (single, two, variable), equipment type (heating, cooling, heating & cooling), distribution type (ducted, ductless, hydronic, mixed), AFUE for furnaces if available, and cabinet size if available. For heat pumps, users can toggle select whether to size the equipment to the heating load or to the cooling load.
-- Users can then view the filtered pricebook equipment
 - If equipment type = "furnace" or "furnace + AC," distribution type will be automatically set to "ducted." If equipment type = "boiler," distribution type will automatically be set to "hydronic." If equipment type = "AC" or "heat pump," prompt user to select distribution type (ducted, ductless, hydronic). 
 - If distribution type = ducted, include this instruction: "Remember to check whether the fan is powerful enough (static pressure) to move the air through the duct system. If not, consider modifying ductwork, increasing return size, adjusting airflow, or selecting a smaller system size."
 - If "equipment type" = "furnace" or "boiler," then "system type" will be automatically set to "heating." If "equipment type" = "furnace + AC," "system type" will be automatically set to "heating & cooing"). If "euqipment type" = "AC" then "system type" will be automatically set to "cooling." IF "equipment type" = "heat pump" then "system type" will be automatically set to "heating & cooling."
@@ -31,6 +67,7 @@ Create a webapp for residential HVAC contractors that matches users' ServiceTita
 - If system type = cooling and outdoor summer design temp >95F, give this instruction: "High outdoor temperatures affect system capacity. Verify capacity for your area using performance data."
 - If system type = cooling and SHR > 0.95, give this instruction: "Dry climates affect system capacity. Verify capacity for your area using performance data."
 - If outdoor winter db > 30F and system type = heating and equipment type = HP, give this instruction: "Heat pumps lose capacity as outdoor temps drop. Use a cold climate heat pump and make sure that the system will meet the heating load at your outdoor winter design temp. (We recommend using a balance point chart.)"
+  
 ## Design System
 ### Color Palette
 - Primary Colors:
