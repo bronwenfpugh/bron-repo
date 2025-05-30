@@ -8,7 +8,7 @@ Create a webapp for residential HVAC contractors that matches users' ServiceTita
 - Handles typical pricebooks of 50-500 equipment items efficiently
 
 ## User Stories
-- As a busy contractor, I want to quickly enter my Manual J loads and see all viable equipment from my ServiceTitan pricebook in under 2 minutes
+- As a busy contractor, I want to quickly enter my Manual J loads and see all viable equipment (including a realistic photo for each piece of equipment) from my ServiceTitan pricebook in under 2 minutes
 - As a contractor with basic HVAC knowledge, I want clear guidance on why each piece of equipment is recommended and any special considerations
 - As a contractor, I want to see all viable options (not just "best" picks) so I can make the final decision based on price, availability, and customer preferences
 
@@ -22,7 +22,7 @@ Create a webapp for residential HVAC contractors that matches users' ServiceTita
 - Simple load input form (Total heating BTU, Total cooling BTU, Sensible cooling BTU; app infers latent cooling BTU and sensible heat ratio.)
 - Basic equipment filtering by nominal capacity
 - Clear equipment recommendations with sizing guidance
-- ServiceTitan pricebook API integration (mock data for development)
+- ServiceTitan pricebook API data (mock data for development)
 
 **Equipment Types Supported:**
 - Furnaces (heating only)
@@ -36,17 +36,15 @@ Create a webapp for residential HVAC contractors that matches users' ServiceTita
 - Additional load inputs (design temperatures, elevation, humidity)
 - Equipment filters (brand, staging, distribution type, AFUE, cabinet size, option to size to heating or cooling load)
 - Advanced sizing guidance and warnings
+-ServiceTitan pricebook API data (mock data for development)
 - Support for boilers and combination systems
 
 ### Phase 3: Enhanced User Experience
 **Goal: Polish and optimize for daily use**
 
 **Features:**
-- Improved UI/UX based on user feedback
-- Performance optimizations for large pricebooks
-- Advanced guidance for complex scenarios
-- Export/sharing capabilities
-- 
+- Use actual ServiceTitan pricebook data (I will upload in .csv format) to replace mock data for development
+
 ### Phase 1 sizing logic:
 
 - Furnaces: List furnaces with 'actual output capacity' within 100-140% of heating load. Also show furnaces with 'actual output capacity' within 140-200% of heating load, but with a disclaimer: "This furnace is x% oversized. Use only if the AC system requires more blower power to accommodate the cooling load." Calculate 'actual output capacity' as 'heatingCapacityBtu' * 'afue'
