@@ -160,7 +160,6 @@ Include major brands: Carrier, Trane, Lennox, Rheem, Goodman, American Standard
 - Replace mock data with actual ServiceTitan pricebook data (CSV upload capability)
 - Performance optimizations for large datasets
 - Enhanced equipment imagery and specifications
-- Advanced export capabilities
 
 ## Sizing Logic Implementation
 
