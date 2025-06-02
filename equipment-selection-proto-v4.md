@@ -247,7 +247,6 @@ Include major brands: Carrier, Trane, Lennox, Rheem, Goodman, American Standard
 - Single-session tool (no data persistence required)
 
 ## Design System
-[Design system section remains unchanged from original PRD]
 
 ### Color Palette
 - **Primary Colors:**
