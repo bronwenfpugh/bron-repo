@@ -220,7 +220,7 @@ Include major brands: Carrier, Trane, Lennox, Rheem, Goodman, American Standard
 
 - **Dry climates (SHR > 0.95) for cooling:** "Dry climates affect system capacity. Verify capacity for your area using performance data."
 
-- **Heat pumps in mild climates (outdoor winter DB > 30°F):** "Heat pumps lose capacity as outdoor temps drop. Use a cold climate heat pump and make sure that the system will meet the heating load at your outdoor winter design temp. (We recommend using a balance point chart.)"
+- **Heat pumps in mild climates (outdoor winter DB < 30°F):** "Heat pumps lose capacity as outdoor temps drop. Use a cold climate heat pump and make sure that the system will meet the heating load at your outdoor winter design temp. (We recommend using a balance point chart.)"
 
 ## Technical Specifications
 
