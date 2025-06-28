@@ -1,0 +1,833 @@
+import type { 
+  LoadInputs, 
+  UserPreferences, 
+  Equipment, 
+  EquipmentRecommendation,
+  EquipmentCalculationResult,
+  ValidationSummary,
+  EquipmentValidationError,
+  TypedEquipment,
+  HeatPumpEquipment,
+  FurnaceEquipment,
+  AcEquipment,
+  BoilerEquipment,
+  ComboEquipment
+} from "@shared/schema";
+
+// Type guard functions
+export function isHeatPump(equipment: Equipment): equipment is HeatPumpEquipment {
+  return equipment.equipmentType === 'heat_pump' &&
+    equipment.nominalTons !== null &&
+    equipment.nominalBtu === null &&
+    equipment.heatingCapacityBtu !== null &&
+    equipment.coolingCapacityBtu !== null &&
+    equipment.latentCoolingBtu !== null &&
+    equipment.afue === null &&
+    equipment.seer !== null &&
+    equipment.hspf !== null;
+}
+
+export function isFurnace(equipment: Equipment): equipment is FurnaceEquipment {
+  return equipment.equipmentType === 'furnace' &&
+    equipment.nominalTons === null &&
+    equipment.nominalBtu !== null &&
+    equipment.heatingCapacityBtu !== null &&
+    equipment.coolingCapacityBtu === null &&
+    equipment.latentCoolingBtu === null &&
+    equipment.afue !== null &&
+    equipment.seer === null &&
+    equipment.hspf === null;
+}
+
+export function isAc(equipment: Equipment): equipment is AcEquipment {
+  return equipment.equipmentType === 'ac' &&
+    equipment.nominalTons !== null &&
+    equipment.nominalBtu === null &&
+    equipment.heatingCapacityBtu === null &&
+    equipment.coolingCapacityBtu !== null &&
+    equipment.latentCoolingBtu !== null &&
+    equipment.afue === null &&
+    equipment.seer !== null &&
+    equipment.hspf !== null;
+}
+
+export function isBoiler(equipment: Equipment): equipment is BoilerEquipment {
+  return equipment.equipmentType === 'boiler' &&
+    equipment.nominalTons === null &&
+    equipment.nominalBtu !== null &&
+    equipment.heatingCapacityBtu !== null &&
+    equipment.coolingCapacityBtu === null &&
+    equipment.latentCoolingBtu === null &&
+    equipment.afue !== null &&
+    equipment.seer === null &&
+    equipment.hspf === null;
+}
+
+export function isCombo(equipment: Equipment): equipment is ComboEquipment {
+  return equipment.equipmentType === 'furnace_ac_combo' &&
+    equipment.nominalTons !== null &&
+    equipment.nominalBtu !== null &&
+    equipment.heatingCapacityBtu !== null &&
+    equipment.coolingCapacityBtu !== null &&
+    equipment.latentCoolingBtu !== null &&
+    equipment.afue !== null &&
+    equipment.seer !== null &&
+    equipment.hspf === null;
+}
+
+// Helper functions
+function btuToTons(btu: number): number {
+  return btu / 12000;
+}
+
+function tonsToBtu(tons: number): number {
+  return tons * 12000;
+}
+
+// Equipment validation and filtering
+function validateEquipment(equipment: Equipment): EquipmentValidationError[] {
+  const errors: EquipmentValidationError[] = [];
+
+  // Type-specific validation
+  if (equipment.equipmentType === 'heat_pump') {
+    if (!isHeatPump(equipment)) {
+      errors.push({
+        equipmentId: equipment.id,
+        manufacturer: equipment.manufacturer,
+        model: equipment.model,
+        errorType: 'type_validation',
+        severity: 'critical',
+        message: 'Heat pump missing required fields or has invalid field combinations',
+        technicalDetails: `nominalTons: ${equipment.nominalTons}, heatingCapacityBtu: ${equipment.heatingCapacityBtu}, coolingCapacityBtu: ${equipment.coolingCapacityBtu}, seer: ${equipment.seer}, hspf: ${equipment.hspf}`
+      });
+    }
+  }
+
+  // Add other equipment type validations here...
+
+  return errors;
+}
+
+function passesFilters(
+  equipment: TypedEquipment, 
+  loadInputs: LoadInputs, 
+  preferences: UserPreferences
+): { passes: boolean; reason?: string } {
+  // Equipment type filter
+  if (!preferences.equipmentTypes.includes(equipment.equipmentType)) {
+    return { passes: false, reason: `Equipment type ${equipment.equipmentType} not selected` };
+  }
+
+  // Distribution type filter
+  if (preferences.distributionType && equipment.distributionType !== preferences.distributionType) {
+    return { passes: false, reason: `Distribution type mismatch` };
+  }
+
+  // For heat pumps, check tonnage oversizing limits using safe type narrowing
+  if (equipment.equipmentType === 'heat_pump') {
+    // TypeScript now knows this is a HeatPumpEquipment due to discriminated union
+    const heatPump = equipment; // No unsafe casting needed
+
+    // Validate heat pump has required fields
+    if (heatPump.nominalTons === null || heatPump.nominalTons === undefined) {
+      console.log(`❌ FILTERED OUT: Heat pump missing nominal tons`);
+      return { passes: false, reason: 'Heat pump missing nominal tons data' };
+    }
+
+    // Calculate required tonnage based on sizing preference
+    const heatingTons = btuToTons(loadInputs.totalHeatingBtu);
+    const coolingTons = btuToTons(loadInputs.totalCoolingBtu);
+
+    let requiredTons: number;
+    let sizingBasis: string;
+
+    // Determine sizing basis based on preferences and load dominance
+    if (preferences.sizingPreference === 'size_to_heating') {
+      requiredTons = heatingTons;
+      sizingBasis = 'heating';
+    } else if (preferences.sizingPreference === 'size_to_cooling') {
+      requiredTons = coolingTons;
+      sizingBasis = 'cooling';
+    } else {
+      // No explicit preference - use the larger load
+      requiredTons = Math.max(heatingTons, coolingTons);
+      sizingBasis = heatingTons > coolingTons ? 'heating (dominant)' : 'cooling (dominant)';
+    }
+
+    // Apply SHR-based and staging-specific sizing limits
+    const shr = loadInputs.totalCoolingBtu > 0 ? loadInputs.sensibleCoolingBtu / loadInputs.totalCoolingBtu : 1.0;
+
+    let maxAllowedTons: number;
+    let minAllowedTons: number;
+
+    // Apply complex sizing rules based on load dominance, SHR, and sizing preference
+    if (heatingTons > coolingTons && shr < 0.95 && preferences.sizingPreference === 'size_to_cooling') {
+      // High moisture + heating dominant + size to cooling
+      if (heatPump.staging === 'single_stage') {
+        if (loadInputs.totalCoolingBtu <= 24000) {
+          minAllowedTons = coolingTons * 0.90;
+          maxAllowedTons = coolingTons * 1.20;
+        } else {
+          minAllowedTons = coolingTons * 0.90;
+          maxAllowedTons = coolingTons * 1.15;
+        }
+      } else if (heatPump.staging === 'two_stage') {
+        minAllowedTons = coolingTons * 0.90;
+        maxAllowedTons = coolingTons * 1.25;
+      } else { // variable_speed
+        minAllowedTons = coolingTons * 0.90;
+        maxAllowedTons = coolingTons * 1.30;
+      }
+      } else if (heatingTons > coolingTons && shr < 0.95 && preferences.sizingPreference === 'size_to_heating') {
+      // High moisture + heating dominant + size to heating = 100-150% of heating load
+      minAllowedTons = heatingTons;
+      maxAllowedTons = heatingTons * 1.50;
+    } else if (heatingTons > coolingTons && shr >= 0.95) {
+      // Dry climate + heating dominant = 100-150% of heating load
+      minAllowedTons = heatingTons;
+      maxAllowedTons = heatingTons * 1.50;
+    } else if (coolingTons >= heatingTons) {
+      // Cooling dominant = use cooling sizing rules
+      if (heatPump.staging === 'single_stage') {
+        if (loadInputs.totalCoolingBtu <= 24000) {
+          minAllowedTons = coolingTons * 0.90;
+          maxAllowedTons = coolingTons * 1.20;
+        } else {
+          minAllowedTons = coolingTons * 0.90;
+          maxAllowedTons = coolingTons * 1.15;
+        }
+      } else if (heatPump.staging === 'two_stage') {
+        minAllowedTons = coolingTons * 0.90;
+        maxAllowedTons = coolingTons * 1.25;
+      } else { // variable_speed
+        minAllowedTons = coolingTons * 0.90;
+        maxAllowedTons = coolingTons * 1.30;
+      }
+    } else {
+      // Fallback to original simple logic
+      minAllowedTons = requiredTons * 0.8;
+      maxAllowedTons = requiredTons + 1.0;
+    }
+
+    // Use epsilon-based comparison for floating-point precision
+    const EPSILON = 0.001;
+
+    if (heatPump.nominalTons - maxAllowedTons > EPSILON) {
+      return { 
+        passes: false, 
+        reason: `Heat pump oversized: ${heatPump.nominalTons} tons exceeds limit of ${maxAllowedTons.toFixed(2)} tons for ${heatPump.staging} equipment` 
+      };
+    }
+
+    if (minAllowedTons - heatPump.nominalTons > EPSILON) {
+      return { 
+        passes: false, 
+        reason: `Heat pump undersized: ${heatPump.nominalTons} tons below minimum of ${minAllowedTons.toFixed(2)} tons for ${sizingBasis} sizing` 
+      };
+    }
+  }
+
+  // Brand filter
+  if (preferences.brandFilter && preferences.brandFilter.length > 0) {
+    if (!preferences.brandFilter.includes(equipment.manufacturer)) {
+      return { passes: false, reason: `Brand not in filter` };
+    }
+  }
+
+  // Staging filter
+  if (preferences.stagingFilter && preferences.stagingFilter.length > 0) {
+    if (!preferences.stagingFilter.includes(equipment.staging)) {
+      return { passes: false, reason: `Staging not in filter` };
+    }
+  }
+
+  // Unit location filter
+  if (preferences.unitLocationFilter && preferences.unitLocationFilter.length > 0) {
+    if (!preferences.unitLocationFilter.includes(equipment.unitLocation)) {
+      return { passes: false, reason: `Unit location not in filter` };
+    }
+  }
+
+  // AFUE filter (for furnaces, boilers, and combo systems)
+  if (preferences.minAfue) {
+    if (equipment.equipmentType === 'furnace' || 
+        equipment.equipmentType === 'boiler' || 
+        equipment.equipmentType === 'furnace_ac_combo') {
+      // TypeScript now knows equipment has afue property
+      if (equipment.afue === null || equipment.afue === undefined) {
+        return { passes: false, reason: `${equipment.equipmentType} missing AFUE rating` };
+      }
+      if (equipment.afue < preferences.minAfue) {
+        return { passes: false, reason: `AFUE ${equipment.afue} below minimum ${preferences.minAfue}` };
+      }
+    }
+  }
+
+  // Price filter
+  if (preferences.maxPrice && equipment.price > preferences.maxPrice) {
+    return { passes: false, reason: `Price above maximum` };
+  }
+
+  return { passes: true };
+}
+
+// Equipment evaluation functions
+function evaluateHeatPump(
+  heatPump: HeatPumpEquipment,
+  loadInputs: LoadInputs,
+  preferences: UserPreferences
+): EquipmentRecommendation {
+  const warnings: string[] = [];
+  const instructions: string[] = [];
+
+  // High outdoor temperature warning for cooling systems
+  if (loadInputs.outdoorSummerDesignTemp && loadInputs.outdoorSummerDesignTemp > 95) {
+    warnings.push("High outdoor temperatures affect system capacity. Verify capacity for your area using performance data.");
+  }
+
+  const heatingLoad = loadInputs.totalHeatingBtu;
+  const coolingLoad = loadInputs.totalCoolingBtu;
+  const sensibleCoolingLoad = loadInputs.sensibleCoolingBtu;
+  const latentCoolingLoad = coolingLoad - sensibleCoolingLoad;
+  const isHeatingDominant = heatingLoad > coolingLoad;
+
+  // Calculate SHR (Sensible Heat Ratio)
+  const shr = coolingLoad > 0 ? sensibleCoolingLoad / coolingLoad : 1.0;
+
+  // Determine sizing basis and evaluate moisture removal implications
+  const sizingBasis = preferences.sizingPreference === 'size_to_heating' || 
+                      (!preferences.sizingPreference && isHeatingDominant) ? 'heating' : 'cooling';
+
+  // Determine primary sizing load based on preferences and load dominance
+  let primaryLoad: number;
+  let primaryCapacity: number;
+
+  if (sizingBasis === 'heating') {
+    primaryLoad = heatingLoad;
+    primaryCapacity = heatPump.heatingCapacityBtu;
+  } else {
+    primaryLoad = coolingLoad;
+    primaryCapacity = heatPump.coolingCapacityBtu;
+  }
+
+  const sizingPercentage = (primaryCapacity / primaryLoad) * 100;
+
+  // Moisture removal analysis for heat pumps
+  if (coolingLoad > 0) {
+    const coolingOversizePercentage = (heatPump.coolingCapacityBtu / coolingLoad) * 100;
+
+    // Check for moisture removal issues based on SHR and sizing method
+    if (sizingBasis === 'heating' && isHeatingDominant) {
+      if (shr < 0.95) {
+        // High latent load scenario - sizing to heating will cause moisture issues
+        warnings.push('System sized for heating will be oversized for cooling and may struggle to remove moisture');
+        instructions.push('Consider adding a standalone dehumidifier');
+        instructions.push(`Verify equipment has adequate latent cooling capacity for your ${Math.round(latentCoolingLoad)} BTU latent load`);
+
+        // Additional specific guidance for high moisture environments
+        if (coolingOversizePercentage > 125) {
+          warnings.push('Significant cooling oversizing will cause short cycling and poor dehumidification');
+          instructions.push('Use OEM data to verify the system turns down to <80% of total cooling load');
+        }
+      } else {
+        // Dry climate - different concerns
+        warnings.push('Sizing the system to heating will oversize it for cooling');
+        instructions.push('For optimal comfort and to avoid wear & tear on the system, use performance data to verify that it turns down to <80% of total cooling load');
+      }
+    }
+
+    // Check latent capacity adequacy
+    if (heatPump.latentCoolingBtu < latentCoolingLoad) {
+      warnings.push(`Equipment latent capacity (${Math.round(heatPump.latentCoolingBtu)} BTU) may be insufficient for latent load (${Math.round(latentCoolingLoad)} BTU)`);
+      instructions.push('Verify latent cooling performance with manufacturer data');
+    }
+
+    // SHR-based warnings for cooling-dominant or cooling-sized systems
+    if (sizingBasis === 'cooling' || coolingLoad > heatingLoad) {
+      if (shr < 0.95) {
+        // High moisture environment
+        if (coolingOversizePercentage > 120) {
+          warnings.push('Oversized cooling system may short cycle and fail to remove adequate moisture');
+          instructions.push('Consider two-stage or variable speed equipment for better moisture control');
+        }
+
+        // Verify minimum latent capacity
+        const minLatentCapacityNeeded = latentCoolingLoad * 1.1; // 10% safety factor
+        if (heatPump.latentCoolingBtu < minLatentCapacityNeeded) {
+          warnings.push('Equipment may not provide adequate dehumidification');
+          instructions.push(`Verify minimum latent capacity of ${Math.round(minLatentCapacityNeeded)} BTU with manufacturer data`);
+        }
+      }
+    }
+
+    // Staging-specific moisture removal guidance
+    if (heatPump.staging === 'single_stage' && shr < 0.85) {
+      warnings.push('Single-stage equipment may struggle with high moisture loads');
+      instructions.push('Consider two-stage or variable speed equipment for better moisture control');
+    } else if (heatPump.staging === 'variable_speed' && shr < 0.90) {
+      instructions.push('Variable speed operation will help with moisture removal at part-load conditions');
+    }
+  }
+
+  // Determine sizing status
+  let sizingStatus: 'optimal' | 'acceptable' | 'oversized' | 'undersized';
+
+  if (sizingPercentage >= 100 && sizingPercentage <= 115) {
+    sizingStatus = 'optimal';
+  } else if (sizingPercentage >= 90 && sizingPercentage < 100) {
+    sizingStatus = 'acceptable';
+    warnings.push('Unit is slightly undersized but acceptable for most applications');
+  } else if (sizingPercentage > 115 && sizingPercentage <= 125) {
+    sizingStatus = 'acceptable';
+    warnings.push('Unit is slightly oversized but within acceptable range');
+  } else if (sizingPercentage > 125) {
+    sizingStatus = 'oversized';
+    warnings.push('Unit is significantly oversized which may cause short cycling');
+  } else {
+    sizingStatus = 'undersized';
+    warnings.push('Unit is undersized and may not meet load requirements');
+  }
+
+  // Check for backup heat requirement
+  let backupHeatRequired: number | undefined;
+  const winterDesignTemp = loadInputs.outdoorWinterDesignTemp;
+
+  if (winterDesignTemp !== undefined && winterDesignTemp < 30) {
+    // Cold weather scenario - use reduced heat pump capacity
+    const isColdClimateHeatPump = heatPump.hspf >= 9.5;
+
+    if (isColdClimateHeatPump) {
+      // Cold climate heat pumps maintain full capacity
+      if (heatPump.heatingCapacityBtu < heatingLoad) {
+        const backupHeatRequiredBtuh = heatingLoad - heatPump.heatingCapacityBtu;
+        const backupHeatKw = Math.ceil(backupHeatRequiredBtuh / 3412);
+        backupHeatRequired = backupHeatRequiredBtuh;
+        instructions.push(`Install ${backupHeatKw}kW backup heat`);
+      }
+    } else {
+      // Standard heat pumps - capacity is halved in cold weather
+      const reducedHeatPumpCapacity = heatPump.heatingCapacityBtu * 0.5;
+
+      if (reducedHeatPumpCapacity < heatingLoad) {
+        const backupHeatRequiredBtuh = heatingLoad - reducedHeatPumpCapacity;
+        const backupHeatKw = Math.ceil(backupHeatRequiredBtuh / 3412);
+        backupHeatRequired = backupHeatRequiredBtuh;
+        instructions.push(`Install ${backupHeatKw}kW backup heat`);
+      }
+    }
+  } else if (winterDesignTemp !== undefined && winterDesignTemp >= 30) {
+    // Moderate climate - use full heat pump capacity
+    if (heatPump.heatingCapacityBtu < heatingLoad) {
+      const backupHeatRequiredBtuh = heatingLoad - heatPump.heatingCapacityBtu;
+      const backupHeatKw = Math.ceil(backupHeatRequiredBtuh / 3412);
+      backupHeatRequired = backupHeatRequiredBtuh;
+      instructions.push(`Install ${backupHeatKw}kW backup heat`);
+    }
+  } else {
+    // No winter design temperature provided - use original logic with correct conversion
+    if (heatPump.heatingCapacityBtu < heatingLoad) {
+      const backupHeatRequiredBtuh = heatingLoad - heatPump.heatingCapacityBtu;
+      const backupHeatKw = Math.ceil(backupHeatRequiredBtuh / 3412);
+      backupHeatRequired = backupHeatRequiredBtuh;
+      instructions.push(`Install ${backupHeatKw}kW backup heat`);
+    }
+  }
+
+  // Cold climate considerations
+  if (preferences.coldClimateOnly && heatPump.hspf < 9.5) {
+    warnings.push('Consider cold climate heat pump for better low-temperature performance');
+  }
+
+  return {
+    equipment: heatPump,
+    sizingStatus,
+    sizingPercentage,
+    warnings,
+    instructions,
+    backupHeatRequired
+  };
+}
+
+function evaluateFurnace(
+  furnace: FurnaceEquipment,
+  loadInputs: LoadInputs,
+  preferences: UserPreferences
+): EquipmentRecommendation {
+  const warnings: string[] = [];
+  const instructions: string[] = [];
+
+  const heatingLoad = loadInputs.totalHeatingBtu;
+  let effectiveCapacity = furnace.heatingCapacityBtu;
+
+  // Apply elevation derating if elevation is provided
+  if (loadInputs.elevation && loadInputs.elevation > 2000) {
+    const deratingFactor = 1 - ((loadInputs.elevation - 2000) * 0.04 / 1000);
+    effectiveCapacity = furnace.heatingCapacityBtu * deratingFactor;
+    const deratingPercentage = ((1 - deratingFactor) * 100).toFixed(1);
+    warnings.push(`Derate heating capacity by ${deratingPercentage}% due to elevation`);
+  }
+
+  const sizingPercentage = (effectiveCapacity / heatingLoad) * 100;
+
+  // Determine sizing status
+  let sizingStatus: 'optimal' | 'acceptable' | 'oversized' | 'undersized';
+
+  if (sizingPercentage >= 100 && sizingPercentage <= 140) {
+    sizingStatus = 'optimal';
+  } else if (sizingPercentage >= 90 && sizingPercentage < 100) {
+    sizingStatus = 'acceptable';
+    warnings.push('Furnace is slightly undersized but acceptable');
+  } else if (sizingPercentage > 140 && sizingPercentage <= 200) {
+    sizingStatus = 'acceptable';
+    warnings.push('Furnace is oversized but within acceptable range');
+  } else if (sizingPercentage > 200) {
+    sizingStatus = 'oversized';
+    warnings.push('Furnace is significantly oversized');
+  } else {
+    sizingStatus = 'undersized';
+    warnings.push('Furnace is undersized');
+  }
+
+  return {
+    equipment: furnace,
+    sizingStatus,
+    sizingPercentage,
+    warnings,
+    instructions
+  };
+}
+
+function evaluateAc(
+  ac: AcEquipment,
+  loadInputs: LoadInputs,
+  preferences: UserPreferences
+): EquipmentRecommendation {
+  const warnings: string[] = [];
+  const instructions: string[] = [];
+
+  // High outdoor temperature warning for cooling systems
+  if (loadInputs.outdoorSummerDesignTemp && loadInputs.outdoorSummerDesignTemp > 95) {
+    warnings.push("High outdoor temperatures affect system capacity. Verify capacity for your area using performance data.");
+  }
+
+  const coolingLoad = loadInputs.totalCoolingBtu;
+  const sensibleCoolingLoad = loadInputs.sensibleCoolingBtu;
+  const latentCoolingLoad = coolingLoad - sensibleCoolingLoad;
+  const sizingPercentage = (ac.coolingCapacityBtu / coolingLoad) * 100;
+
+  // Calculate SHR for moisture removal analysis
+  const shr = coolingLoad > 0 ? sensibleCoolingLoad / coolingLoad : 1.0;
+
+  // Determine sizing status
+  let sizingStatus: 'optimal' | 'acceptable' | 'oversized' | 'undersized';
+
+  if (sizingPercentage >= 100 && sizingPercentage <= 115) {
+    sizingStatus = 'optimal';
+  } else if (sizingPercentage >= 90 && sizingPercentage < 100) {
+    sizingStatus = 'acceptable';
+    warnings.push('AC is slightly undersized but acceptable');
+  } else if (sizingPercentage > 115 && sizingPercentage <= 125) {
+    sizingStatus = 'acceptable';
+    warnings.push('AC is slightly oversized but within acceptable range');
+  } else if (sizingPercentage > 125) {
+    sizingStatus = 'oversized';
+    warnings.push('AC is oversized which may cause short cycling');
+  } else {
+    sizingStatus = 'undersized';
+    warnings.push('AC is undersized');
+  }
+
+  // Moisture removal analysis for AC units
+  if (shr < 0.95) {
+    // High moisture environment
+    if (sizingPercentage > 120) {
+      warnings.push('Oversized AC system may short cycle and fail to remove adequate moisture');
+      instructions.push('Consider two-stage or variable speed equipment for better moisture control');
+    }
+
+    // Check latent capacity adequacy
+    if (ac.latentCoolingBtu < latentCoolingLoad) {
+      warnings.push(`Equipment latent capacity (${Math.round(ac.latentCoolingBtu)} BTU) may be insufficient for latent load (${Math.round(latentCoolingLoad)} BTU)`);
+      instructions.push('Verify latent cooling performance with manufacturer data');
+    }
+
+    // Staging-specific moisture removal guidance
+    if (ac.staging === 'single_stage' && shr < 0.85) {
+      warnings.push('Single-stage AC may struggle with high moisture loads');
+      instructions.push('Consider two-stage or variable speed equipment for better moisture control');
+    } else if (ac.staging === 'variable_speed' && shr < 0.90) {
+      instructions.push('Variable speed operation will help with moisture removal at part-load conditions');
+    }
+
+    // General dehumidification guidance
+    instructions.push(`Verify equipment has adequate latent cooling capacity for your ${Math.round(latentCoolingLoad)} BTU latent load`);
+  } else {
+    // Dry climate considerations
+    instructions.push('Dry climates affect system capacity. Verify capacity for your area using performance data');
+  }
+
+  // Calculate recommended CFM
+  const recommendedCfm = sensibleCoolingLoad / 1.08 / 20; // Assuming 20°F temperature rise
+
+  return {
+    equipment: ac,
+    sizingStatus,
+    sizingPercentage,
+    warnings,
+    instructions,
+    recommendedCfm
+  };
+}
+
+function evaluateBoiler(
+  boiler: BoilerEquipment,
+  loadInputs: LoadInputs,
+  preferences: UserPreferences
+): EquipmentRecommendation {
+  const warnings: string[] = [];
+  const instructions: string[] = [];
+
+  const heatingLoad = loadInputs.totalHeatingBtu;
+  const sizingPercentage = (boiler.heatingCapacityBtu / heatingLoad) * 100;
+
+  // Determine sizing status
+  let sizingStatus: 'optimal' | 'acceptable' | 'oversized' | 'undersized';
+
+  if (sizingPercentage >= 100 && sizingPercentage <= 125) {
+    sizingStatus = 'optimal';
+  } else if (sizingPercentage >= 90 && sizingPercentage < 100) {
+    sizingStatus = 'acceptable';
+    warnings.push('Boiler is slightly undersized but acceptable');
+  } else if (sizingPercentage > 125 && sizingPercentage <= 150) {
+    sizingStatus = 'acceptable';
+    warnings.push('Boiler is oversized but within acceptable range');
+  } else if (sizingPercentage > 150) {
+    sizingStatus = 'oversized';
+    warnings.push('Boiler is significantly oversized');
+  } else {
+    sizingStatus = 'undersized';
+    warnings.push('Boiler is undersized');
+  }
+
+  return {
+    equipment: boiler,
+    sizingStatus,
+    sizingPercentage,
+    warnings,
+    instructions
+  };
+}
+
+function evaluateCombo(
+  combo: ComboEquipment,
+  loadInputs: LoadInputs,
+  preferences: UserPreferences
+): EquipmentRecommendation {
+  const warnings: string[] = [];
+  const instructions: string[] = [];
+
+  // High outdoor temperature warning for cooling systems
+  if (loadInputs.outdoorSummerDesignTemp && loadInputs.outdoorSummerDesignTemp > 95) {
+    warnings.push("High outdoor temperatures affect system capacity. Verify capacity for your area using performance data.");
+  }
+
+  const heatingLoad = loadInputs.totalHeatingBtu;
+  const coolingLoad = loadInputs.totalCoolingBtu;
+
+  // Evaluate both heating and cooling performance
+  const heatingSizingPercentage = (combo.heatingCapacityBtu / heatingLoad) * 100;
+  const coolingSizingPercentage = (combo.coolingCapacityBtu / coolingLoad) * 100;
+
+  // Use the more critical sizing percentage
+  const sizingPercentage = Math.min(heatingSizingPercentage, coolingSizingPercentage);
+
+  // Determine sizing status based on the more critical load
+  let sizingStatus: 'optimal' | 'acceptable' | 'oversized' | 'undersized';
+
+  if (sizingPercentage >= 100 && sizingPercentage <= 115) {
+    sizingStatus = 'optimal';
+  } else if (sizingPercentage >= 90 && sizingPercentage < 100) {
+    sizingStatus = 'acceptable';
+    warnings.push('System is slightly undersized but acceptable');
+  } else if (sizingPercentage > 115 && sizingPercentage <= 125) {
+    sizingStatus = 'acceptable';
+    warnings.push('System is slightly oversized but within acceptable range');
+  } else if (sizingPercentage > 125) {
+    sizingStatus = 'oversized';
+    warnings.push('System is oversized');
+  } else {
+    sizingStatus = 'undersized';
+    warnings.push('System is undersized');
+  }
+
+  return {
+    equipment: combo,
+    sizingStatus,
+    sizingPercentage,
+    warnings,
+    instructions
+  };
+}
+
+// Safe type conversion utility
+function safelyConvertToTypedEquipment(equipment: Equipment): TypedEquipment | null {
+  // Use type guards to safely convert to typed equipment
+  if (isHeatPump(equipment)) return equipment;
+  if (isFurnace(equipment)) return equipment;
+  if (isAc(equipment)) return equipment;
+  if (isBoiler(equipment)) return equipment;
+  if (isCombo(equipment)) return equipment;
+  return null;
+}
+
+// Main calculation function
+export function calculateEquipmentRecommendations(
+  loadInputs: LoadInputs,
+  preferences: UserPreferences,
+  equipmentDatabase: Equipment[]
+): EquipmentCalculationResult {
+
+  // Input validation
+  if (!loadInputs || !preferences || !equipmentDatabase) {
+    throw new Error('Missing required parameters for equipment calculation');
+  }
+
+  if (loadInputs.totalHeatingBtu < 0 || loadInputs.totalCoolingBtu < 0) {
+    throw new Error('Load inputs cannot be negative');
+  }
+
+  if (loadInputs.totalHeatingBtu === 0 && loadInputs.totalCoolingBtu === 0) {
+    throw new Error('At least one load (heating or cooling) must be greater than zero');
+  }
+
+  const validationErrors: EquipmentValidationError[] = [];
+  const validEquipment: TypedEquipment[] = [];
+
+  for (const equipment of equipmentDatabase) {
+    if (!equipment.isActive) continue;
+
+    // Validate basic equipment data
+    if (!equipment.id || !equipment.manufacturer || !equipment.model) {
+      validationErrors.push({
+        equipmentId: equipment.id || 'unknown',
+        manufacturer: equipment.manufacturer || 'unknown',
+        model: equipment.model || 'unknown',
+        errorType: 'data_inconsistency',
+        severity: 'critical',
+        message: 'Equipment missing required basic fields (id, manufacturer, or model)',
+        technicalDetails: `id: ${equipment.id}, manufacturer: ${equipment.manufacturer}, model: ${equipment.model}`
+      });
+      continue;
+    }
+
+    const errors = validateEquipment(equipment);
+    if (errors.length > 0) {
+      validationErrors.push(...errors);
+      continue;
+    }
+
+    // Safe type conversion using type guards
+    const typedEquipment = safelyConvertToTypedEquipment(equipment);
+
+    if (typedEquipment) {
+      validEquipment.push(typedEquipment);
+    } else {
+      validationErrors.push({
+        equipmentId: equipment.id,
+        manufacturer: equipment.manufacturer,
+        model: equipment.model,
+        errorType: 'type_validation',
+        severity: 'critical',
+        message: `Equipment type ${equipment.equipmentType} failed type guard validation`,
+        technicalDetails: JSON.stringify(equipment, null, 2)
+      });
+    }
+  }
+  const filteredEquipment: TypedEquipment[] = [];
+
+  for (const equipment of validEquipment) {
+    try {
+      const filterResult = passesFilters(equipment, loadInputs, preferences);
+      if (filterResult.passes) {
+        filteredEquipment.push(equipment);
+      }
+    } catch (error) {
+      validationErrors.push({
+        equipmentId: equipment.id,
+        manufacturer: equipment.manufacturer,
+        model: equipment.model,
+        errorType: 'type_validation',
+        severity: 'critical',
+        message: 'Equipment failed filter validation due to type safety error',
+        technicalDetails: error instanceof Error ? error.message : 'Unknown filter error'
+      });
+    }
+  }
+  const recommendations: EquipmentRecommendation[] = [];
+
+  for (const equipment of filteredEquipment) {
+    try {
+      let recommendation: EquipmentRecommendation;
+
+      // Safe evaluation using discriminated union
+      switch (equipment.equipmentType) {
+        case 'heat_pump':
+          recommendation = evaluateHeatPump(equipment, loadInputs, preferences);
+          break;
+        case 'furnace':
+          recommendation = evaluateFurnace(equipment, loadInputs, preferences);
+          break;
+        case 'ac':
+          recommendation = evaluateAc(equipment, loadInputs, preferences);
+          break;
+        case 'boiler':
+          recommendation = evaluateBoiler(equipment, loadInputs, preferences);
+          break;
+        case 'furnace_ac_combo':
+          recommendation = evaluateCombo(equipment, loadInputs, preferences);
+          break;
+        default:
+          // This should never happen due to type guards, but provides safety
+          const exhaustiveCheck: never = equipment;
+          throw new Error(`Unhandled equipment type: ${(exhaustiveCheck as any).equipmentType}`);
+      }
+
+      recommendations.push(recommendation);
+    } catch (error) {
+      validationErrors.push({
+        equipmentId: equipment.id,
+        manufacturer: equipment.manufacturer,
+        model: equipment.model,
+        errorType: 'spec_validation',
+        severity: 'critical',
+        message: 'Equipment evaluation failed',
+        technicalDetails: error instanceof Error ? error.message : 'Unknown evaluation error'
+      });
+    }
+  }
+
+  // Sort recommendations by sizing quality
+  recommendations.sort((a, b) => {
+    // Optimal first, then acceptable, then others
+    const statusOrder = { optimal: 0, acceptable: 1, oversized: 2, undersized: 3 };
+    const statusDiff = statusOrder[a.sizingStatus] - statusOrder[b.sizingStatus];
+    if (statusDiff !== 0) return statusDiff;
+
+    // Within same status, sort by how close to 100%
+    const aDiff = Math.abs(a.sizingPercentage - 100);
+    const bDiff = Math.abs(b.sizingPercentage - 100);
+    return aDiff - bDiff;
+  });
+
+  const validationSummary: ValidationSummary = {
+    totalEquipment: equipmentDatabase.filter(eq => eq.isActive).length,
+    includedEquipment: recommendations.length,
+    excludedEquipment: equipmentDatabase.filter(eq => eq.isActive).length - recommendations.length,
+    errors: validationErrors
+  };
+
+  return {
+    recommendations,
+    validationSummary
+  };
+}
